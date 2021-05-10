@@ -234,6 +234,90 @@ check_version () {
 }
 
 #=== FUNCTION =================================================================
+#        Name: query_online_info
+# Description: Querying online packages infomation
+# Parameter *: Optional. The packages to query infomation for
+#==============================================================================
+
+query_online_info () {
+
+    msg "Getting info of online packages."
+
+    for package in "$@"; do
+        arguments+="&arg\[\]=${package}"
+    done
+
+    msg_verbose1 "Sending query to AUR."
+    local url="${AURURL}rpc.php?v=5&type=info${arguments}"
+
+    msg_verbose2 "URL is: ${url}"
+
+    local aur_response=$(curl "${url}")
+
+    msg_verbose2 "Getting number of objects in json array!"
+    local resultcount=$(jshon -e resultcount <<< "$aur_response")
+
+    if [[ $resultcount -le 0 ]]; then
+        error "Packages infos could not be loaded!"
+        return 2
+    fi
+
+    aur_response=$(jshon -e results <<< "$aur_response")
+    msg_verbose2 "Looping over json array!"
+
+    for i in $(seq 0 $((resultcount-1))); do
+
+        msg_verbose2 "Extracting package name."
+
+        local package=$(jshon -e "$i" <<< "$aur_response")
+        local package_name=$(jshon -e Name -u <<< "$package")
+        local package_version=$(jshon -e Version -u <<< "$package")
+        local package_description=$(jshon -e Description -u <<< "$package")
+        local package_url=$(jshon -e URL -u <<< "$package")
+        local package_license=$(jshon -e License <<< "$package")
+        for key in "${package_license}"
+        do
+            package_license=$(echo "$key" | tr -d '\n["] '| tr , " ")
+        done
+        local package_votes=$(jshon -e NumVotes -u <<< "$package")
+        local package_popularity=$(jshon -e Popularity -u <<< "$package")
+        local package_popularity=$(printf "%0.2f" $package_popularity)
+        local package_groups=$(jshon -e Groups <<< "$package")
+        for key in "${package_groups}"
+        do
+            package_groups=$(echo "$key" | tr -d '\n["] '| tr , " ")
+        done
+        local package_depends=$(jshon -e Depends <<< "$package")
+        for key in "${package_depends}"
+        do
+            package_depends=$(echo "$key" | tr -d '\n["] '| tr , " ")
+        done
+        local package_maintainer=$(jshon -e Maintainer -u <<< "$package")
+        local package_firstsubmitted=$(jshon -e FirstSubmitted -u <<< "$package")
+        local package_firstsubmitted=$(TZ=UTC0 printf '%(%c)T\n' $package_firstsubmitted)
+        local package_lastmodified=$(jshon -e LastModified -u <<< "$package")
+        local package_lastmodified=$(TZ=UTC0 printf '%(%c)T\n' $package_lastmodified)
+
+        echo -e "${RED}Repository           : ${ALL_OFF}aur"
+        echo -e "${RED}Name                 : ${GREEN}${package_name}"
+        echo -e "${RED}Version              : ${ALL_OFF}${package_version}"
+        echo -e "${RED}URL                  : ${ALL_OFF}${package_url}"
+        echo -e "${RED}Licenses             : ${ALL_OFF}${package_license[@]:-Unlicense}"
+        echo -e "${RED}Groups               : ${ALL_OFF}${package_groups:-None}"
+        echo -e "${RED}Depends On           : ${ALL_OFF}${package_depends:-None}"
+        echo -e "${RED}Maintainer           : ${ALL_OFF}${package_maintainer}"
+        echo -e "${RED}Description          : ${ALL_OFF}$package_description"
+        echo -e "${RED}FirstSubmitted       : ${ALL_OFF}$package_firstsubmitted"
+        echo -e "${RED}LastModified         : ${ALL_OFF}$package_lastmodified"
+        echo -e "${RED}Popularity           : ${ALL_OFF}${package_popularity}"
+        echo -e "${RED}Votes                : ${ALL_OFF}${package_votes}"
+        echo
+
+    done
+
+}
+
+#=== FUNCTION =================================================================
 #        Name: query_online_version
 # Description: Querying online packages version
 #==============================================================================
@@ -444,6 +528,7 @@ usage() {
 
     Options:
       -h, --help                              Display help
+      -i, --info                              Display aur package info
       -c, --check                             Check installed, foreign packages if there are updates available
       -p, --parseable                         Check installed, foreign packages if there are updates available and print them in a parseable format
       -d DIRECTORY, --downloaddir DIRECTORY   Download packages to the specified directory
@@ -458,6 +543,7 @@ usage() {
 }
 
 
+info_flag=
 check_flag=
 search_flag=
 maintainer_flag=
@@ -485,6 +571,10 @@ while true; do
         -h|--help|-\?)
             usage
             exit 0
+            ;;
+        -i|--info)
+            info_flag=1
+            shift
             ;;
         -c|--check)
             check_flag=1
@@ -559,7 +649,9 @@ else
     downloaddir=${downloaddir%/}
 fi
 
-if [[ "$check_flag" ]]; then
+if [[ "$info_flag" ]]; then
+    query_online_info "$@"
+elif [[ "$check_flag" ]]; then
     query_local_version "$@"
 elif [[ "$search_flag" ]]; then
     search "search" "$@"
