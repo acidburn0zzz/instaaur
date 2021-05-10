@@ -1,0 +1,572 @@
+#!/usr/bin/env bash
+
+[[ $PACMAN ]] || PACMAN="pacman"
+pacmanbin="/usr/bin/pacman"
+
+## Security
+# Unalias everything
+command unalias -a
+# Secure PATH
+PATH='/bin:/usr/bin'
+export PATH
+# Clearing the Command hash
+hash -r
+# Setting secure IFS
+IFS=$' \t\n'
+# Setting a secure umask
+UMASK=002
+umask $UMASK
+# Expand aliases in command substitution
+shopt -s expand_aliases
+
+## Script metadata
+SCRIPTNAME=${0##*/}
+VERSION="2021.05.10"
+DESCRIPTION="A bach AUR wrapper"
+AUTHOR="Wayne Wesley <wayne6324@gmail.com>"
+
+readonly SCRIPTNAME DESCRIPTION VERSION AUTHOR
+
+## Constants
+AURURL="https://aur.archlinux.org/"
+
+readonly AURURL
+
+
+## Set Colors (copied from makepkg)
+if tput setaf 0 $>/dev/null; then
+    ALL_OFF="$(tput sgr0)"
+    RED="$(tput setaf 1)"
+    GREEN="$(tput setaf 2)"
+    YELLOW="$(tput setaf 3)"
+    BLUE="$(tput setaf 4)"
+    PURPLE="$(tput setaf 5)"
+    CYAN="$(tput setaf 6)"
+else
+    ALL_OFF="\e[1;0m"
+    BOLD="\[1;1m"
+    RED="\e[1;31m"
+    GREEN="\e[1;32m"
+    YELLOW="\e[1;33m"
+    BLUE="\e[1;34m"
+    PURPLE="\e[1:35m"
+    CYAN="\e[1:36m"
+fi
+COLS="$(tput cols)"
+
+readonly ALL_OFF BOLD RED GREEN YELLOW BLUE PURPLE CYAN COLS
+
+# Alias commands to save characters
+alias jshon='jshon -Q'
+alias curl='curl -s -fL'
+
+#=== FUNCTION =================================================================
+#        Name: msg
+# Description: Print message with a green pretag if $quiet is not set
+# Parameter 1: Message to print
+#==============================================================================
+
+# copied from makepkg and modified
+msg () {
+
+    if [[ $quiet -eq 0 ]]; then
+        local mesg=$1; shift
+        printf "${GREEN}==>${ALL_OFF}${BOLD} %s${ALL_OFF}\n" "$mesg" "$@"
+    fi
+}
+
+#=== FUNCTION =================================================================
+#        Name: msg_verbose1
+# Description: Prints message if $verbose is 1 or greater
+# Parameter 1: Message to print
+#==============================================================================
+
+msg_verbose1 () {
+
+    if [[ $verbose -ge 1 ]]; then
+        msg "$1"
+    fi
+
+}
+
+#=== FUNCTION =================================================================
+#        Name: msg_verbose2
+# Description: Prints message if $verbose is 2 or greater
+# Parameter 1: Message to print
+#==============================================================================
+
+msg_verbose2 () {
+
+    if [[ $verbose -ge 2 ]]; then
+        msg "$1"
+    fi
+
+}
+
+#=== FUNCTION =================================================================
+#        Name: msg2
+# Description: Print message with a blue pretag
+# Parameter 1: Message to print
+#==============================================================================
+
+# copied from makepkg and modified
+msg2 () {
+
+    local mesg=$1; shift
+    printf "    ${BLUE}==>${ALL_OFF}${BOLD} %s${ALL_OFF}\n" "$mesg" "$@"
+
+}
+
+#=== FUNCTION =================================================================
+#        Name: error
+# Description: Print message with a red pretag an ERROR
+# Parameter 1: Message to print
+#==============================================================================
+
+# copied from makepkg
+error() {
+
+    local mesg=$1; shift
+    printf "${RED}==> ERROR:${ALL_OFF}${BOLD} %s${ALL_OFF}\n" "$mesg" "$@" >&2
+
+}
+
+#=== FUNCTION =================================================================
+#        Name: search
+# Description: Search packages in AUR
+# Parameter 1: Type of search
+# Parameter *: Keywords to search for
+#==============================================================================
+
+search() {
+
+    if [[ $# -lt 2 ]]; then
+        error "Not enough parameters supplied"
+        return 1
+    fi
+
+    local type=$1
+    shift
+    if [[ "$type" == "msearch" ]]; then
+        msg "Searching AUR for packages by maintainer $1"
+        type="search&search_by=maintainer"
+    elif [[ "$type" == "nsearch" ]]; then
+        msg "Searching AUR for packages by exact name $1"
+        type="search&search_by=name"
+    else
+        msg "Searching AUR for $1"
+    fi
+
+    local url="${AURURL}rpc.php?v=5&type=$type&arg=$*"
+
+    msg_verbose2 "URL is: ${url}"
+
+    local aur_response=$(curl "${url}")
+
+    local resultcount=$(jshon -e resultcount <<< "$aur_response")
+    aur_response=$(jshon -e results <<< "$aur_response")
+
+    if [[ $? -ne 0 ]]; then
+        error "Packages infos could not be loaded!"
+        return 2
+    fi
+
+    msg_verbose2 "Getting number of objects in json array!"
+
+    msg_verbose1 "There are $resultcount packages found."
+    msg_verbose2 "Looping over json array!"
+
+    if [[ "$quiet" -eq 0 ]]; then
+        printf "\n"
+    fi
+
+    for i in $(seq 0 $((resultcount-1))); do
+
+        local package=$(jshon -e "$i" <<< "$aur_response")
+
+        local package_name=$(jshon -e Name -u <<< "$package")
+        local package_version=$(jshon -e Version -u <<< "$package")
+        local package_description=$(fold -sw "$COLS" <<< "$(jshon -e Description -u <<< "$package")")
+        local out_of_date=$(jshon -e OutOfDate <<< "$package")
+        local num_votes=$(jshon -e NumVotes <<< "$package")
+        local maintainer=$(jshon -e Maintainer -u <<< "$package")
+        local last_modified=$(date -d @"$(jshon -e LastModified <<< "$package")")
+
+        if [[ $out_of_date -eq 0 ]]; then
+            local color="${GREEN}"
+        else
+            local color="${RED}"
+        fi
+        printf "${PURPLE}%s${ALL_OFF} ${color}%s${ALL_OFF} ${BLUE}%s${ALL_OFF} ${CYAN}%s${ALL_OFF} ${YELLOW}%s${ALL_OFF}\n%s\n\n" "$package_name" "$package_version" "$last_modified" "$maintainer" "$num_votes" "$package_description"
+
+    done
+}
+
+
+#=== FUNCTION =================================================================
+#        Name: check_version
+# Description: Check version between two packages and print a message if the
+#              later one is newer
+# Parameter 1: Name of the package
+# Parameter 2: Version of the local package
+# Parameter 3: Version of the online package
+#==============================================================================
+
+check_version () {
+
+    if [[ $# -ne 3 ]]; then
+        error "Not enough parameters supplied"
+        return 1
+    fi
+
+    if [[ ! "$parseable_flag" ]]; then
+        msg "Checking version for '$1'"
+    fi
+
+    if [[ $(vercmp "$2" "$3") -eq -1 ]]; then
+        if [[ "$parseable_flag" ]]; then
+            printf "%s ${GREEN}%s${ALL_OFF}\n" "$1" "$3"
+        else
+            msg2 "New version for '$1': $2 -> $3"
+        fi
+    fi
+
+}
+
+#=== FUNCTION =================================================================
+#        Name: query_online_version
+# Description: Querying online packages version
+#==============================================================================
+
+query_online_version () {
+
+    msg "Getting version of online packages."
+
+    local arguments=""
+
+    msg_verbose2 "Creating argument list."
+
+    for package in "${!packages[@]}"; do
+        arguments+="&arg\[\]=${package}"
+    done
+
+    msg_verbose1 "Sending query to AUR."
+
+    local url="${AURURL}rpc.php?v=5&type=info${arguments}"
+
+    msg_verbose2 "URL is: ${url}"
+
+    local aur_response=$(curl "${url}")
+
+    if [[ $? -ne 0 ]]; then
+        error "Packages infos could not be loaded!"
+        return 2
+    fi
+    msg_verbose2 "Getting number of objects in json array!"
+    local resultcount=$(jshon -e resultcount <<< "$aur_response")
+    aur_response=$(jshon -e results <<< "$aur_response")
+    msg_verbose2 "Looping over json array!"
+
+    for i in $(seq 0 $((resultcount-1))); do
+
+        msg_verbose2 "Extracting package name."
+
+        local package=$(jshon -e "$i" <<< "$aur_response")
+        local package_name=$(jshon -e Name -u <<< "$package")
+
+        msg_verbose2 "Extracting old package version."
+
+        local old_package_version=${packages[$package_name]}
+
+        msg_verbose2 "Extracting new package version."
+
+        local new_package_version=$(jshon -e Version -u <<< "$package")
+
+        check_version "$package_name" "$old_package_version" "$new_package_version"
+        unset packages[$package_name]
+    done
+
+    msg_verbose2 "Check for missing packages."
+
+    for package in "${!packages[@]}"; do
+        msg "$package was not found."
+    done
+
+}
+
+#=== FUNCTION =================================================================
+#        Name: query_local_version
+# Description: Querying local packages version
+# Parameter *: Optional. The packages to query, if not specified, querying all
+#              packages
+#==============================================================================
+
+query_local_version () {
+
+    msg "Getting version of installed packages."
+
+    declare -A packages
+
+    local IFS=$'\n'
+    for package in $(pacman -Qm "$@"); do
+        local package_name=${package%\ *}
+        local package_version=${package#*\ }
+        packages[$package_name]=$package_version
+    done
+
+
+    if [[ $? -eq 0 ]]; then
+        msg "There are ${#packages[@]} foreign packages to check."
+        query_online_version
+    else
+        error "Packages could not be loaded!"
+        return 2
+    fi
+
+}
+
+#=== FUNCTION =================================================================
+#        Name: extract_and_remove
+# Description: Extracting a tar.gz file and remove the archive file
+# Parameter 1: File to extract
+#==============================================================================
+
+extract_and_remove () {
+
+    if [[ $# -ne 1 ]]; then
+        error "Not enough parameters supplied"
+        return 1
+    fi
+
+    if [[ -f $1 ]]; then
+
+        msg "Extracting '$1'"
+
+        tar xzf "$1" -C "$downloaddir"
+
+        msg_verbose2 "Setting trap to remove extracted directory"
+        trap "rm -rf '$downloaddir/${1%.tar.gz}'" EXIT
+
+        msg_verbose1 "Removing '$1'"
+        rm "$1"
+    else
+        error "'$1' is not a file"
+        return 2
+    fi
+
+}
+
+#=== FUNCTION =================================================================
+#        Name: download
+# Description: Download a package from the AUR and extracting it
+# Parameter 1: The package name to download
+#==============================================================================
+
+download () {
+
+    if [[ $# -eq 0 ]]; then
+        error "Not enoug parameters supplied!"
+        return 1
+    fi
+
+    until [[ -z "$1" ]]; do
+        if [[ "$git_flag" -eq 0 ]]; then
+            local filename="${1}.tar.gz"
+            msg "Downloading '$filename' to '$downloaddir'"
+            curl -o "$downloaddir/$filename" "${AURURL}cgit/aur.git/snapshot/$filename"
+        else
+            local gitrepo="${1}.git"
+            if [[ -d "$downloaddir/$1" ]]; then
+                msg "Pulling '$1'"
+                git -C "$downloaddir/$1" pull
+            else
+                msg "Cloning '$1' into '$downloaddir'"
+                git clone --quiet "${AURURL}/$gitrepo/" "$downloaddir/$1"
+            fi
+        fi
+
+        if [[ $? -eq 0 ]]; then
+            if [[ "$git_flag" -eq 0 ]]; then
+                msg_verbose2 "Setting trap to remove downloaded file"
+                trap "rm -f '$downloaddir/$filename'" EXIT
+                extract_and_remove "$downloaddir/$filename"
+            else
+                msg_verbose2 "Checking if we downloaded an empty repository"
+                if [[ ! -e "$downloaddir/$1/PKGBUILD" ]]; then
+                    rm -fr "$downloaddir/$1"
+                    error "'$1' could not be found!"
+                    return 2
+                fi
+            fi
+        else
+            error "'$1' could not be found!"
+            return 2
+        fi
+        shift
+    done
+
+}
+
+#=== FUNCTION =================================================================
+#        Name: version
+# Description: Prints version information
+#==============================================================================
+
+version() {
+    pacver=$($pacmanbin -V 2>/dev/null | grep -o "Pacman v.*")
+    printf "
+                                %s v%s - %s
+       ===   =   =  =====       ${pacver}
+      =   =  =   =  =   =
+      =====  =   =  ====        This program may be freely redistributed under
+      =   =  =   =  =   =       the terms of the Attribution NonCommercial
+      =   =   ===   =   =       ShareAlike 4.0 International License.
+
+                                %s
+    \n" "$SCRIPTNAME" "$VERSION" "$DESCRIPTION" "$AUTHOR"
+    exit
+}
+
+
+#=== FUNCTION =================================================================
+#        Name: usage
+# Description: Prints the usage
+#==============================================================================
+
+usage() {
+
+    printf "
+    Download packages from AUR or check installed, foreign packages, if there are updates available.
+
+    Usage:
+      %s <packages>...
+      %s [options] [<packages>]...
+
+    Options:
+      -h, --help                              Display help
+      -c, --check                             Check installed, foreign packages if there are updates available
+      -p, --parseable                         Check installed, foreign packages if there are updates available and print them in a parseable format
+      -d DIRECTORY, --downloaddir DIRECTORY   Download packages to the specified directory
+      -s KEYWORDS, --search KEYWORDS          Search for packages containing specified keywords
+      -m MAINTAINER, --maintainer MAINTAINER  Search packages from specified maintainer
+      -n NAME, --name NAME                    Search packages by exact name
+      -g, --git                               Download packages using git
+      -v, --verbose                           Be more verbose, can be supplied at  maximum 2 times
+      -q, --quiet                             Be less verbose. Takes precedence over -v and --verbose
+      --version                               Print version information and exits
+      \n" "$SCRIPTNAME" "$SCRIPTNAME"
+}
+
+
+check_flag=
+search_flag=
+maintainer_flag=
+name_flag=
+parseable_flag=
+git_flag=0
+verbose=0
+quiet=0
+downloaddir="$HOME/.cache/instaaur/pkg/"
+
+if [[ $# -eq 0 ]]; then
+    usage
+    exit 1
+fi
+
+# Check for dependencies
+hash curl 2>/dev/null || { error "curl is not installed!"; exit 3; }
+hash tar 2>/dev/null || { error "tar is not installed!"; exit 3; }
+hash pacman 2>/dev/null || { error "pacman is not installed!"; exit 3; }
+hash jshon 2>/dev/null || { error "jshon is not installed"; exit 3; }
+
+
+while true; do
+    case $1 in
+        -h|--help|-\?)
+            usage
+            exit 0
+            ;;
+        -c|--check)
+            check_flag=1
+            shift
+            ;;
+        -d|--downloaddir)
+            downloaddir=$2
+            shift 2
+            ;;
+        -v|--verbose)
+            verbose=1
+            shift
+            ;;
+        -vv)
+            verbose=2
+            shift
+            ;;
+        -q|--quiet)
+            quiet=1
+            shift
+            ;;
+        -s|--search)
+            search_flag=1
+            shift
+            ;;
+        -m|--maintainer)
+            maintainer_flag=1
+            shift
+            ;;
+        -n|--name)
+            name_flag=1
+            shift
+            ;;
+        -p|--parseable)
+            check_flag=1
+            parseable_flag=1
+            quiet=1
+            shift
+            ;;
+        -g|--git)
+            git_flag=1
+            hash git 2>/dev/null || { error "git is not installed"; exit 3; }
+            shift
+            ;;
+        --version)
+            version
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            error "Unknown option: $1"
+            usage
+            exit 1
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+# check if downloaddir is a directory and remove trailing slash
+if [[ -d $downloaddir ]]; then
+    if [[ "$downloaddir" == "./" ]]; then
+        downloaddir="$PWD"
+    else
+        downloaddir=${downloaddir%/}
+    fi
+else
+    downloaddir=${downloaddir%/}
+fi
+
+if [[ "$check_flag" ]]; then
+    query_local_version "$@"
+elif [[ "$search_flag" ]]; then
+    search "search" "$@"
+elif [[ "$maintainer_flag" ]]; then
+    search "msearch" "$@"
+elif [[ "$name_flag" ]]; then
+    search "nsearch" "$@"
+else
+    download "$@"
+fi

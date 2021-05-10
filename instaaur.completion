@@ -1,0 +1,22 @@
+_instaaur() {
+
+    local cur prev opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    opts="-h --help -c --check -s --search -v --verbose -q --quiet --version --downloaddir -d -p --parseable"
+
+    if [[ ${prev} == "-d" ]]; then
+        COMPREPLY=( $(compgen -d -- ${cur}) )
+        return 0
+    fi
+    if [[ ${prev} == "--downloaddir" ]]; then
+        COMPREPLY=( $(compgen -d -- ${cur}) )
+        return 0
+    fi
+    if [[ ${cur} == -* ]]; then
+        COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+        return 0
+    fi
+}
+complete -F _instaaur instaaur
