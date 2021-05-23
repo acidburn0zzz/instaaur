@@ -6,7 +6,7 @@ all:
 
 install:
 	@mkdir -p $(DESTDIR)$(PREFIX)/bin
-	@mkdir -p $(DESTDIR)$(MANDIR)/man1
+	@mkdir -p $(DESTDIR)$(MANDIR)/man8
 	@cp -p instaaur $(DESTDIR)$(PREFIX)/bin/instaaur
 	@cp -p instaaur.8 $(DESTDIR)$(MANDIR)/man8
 	@chmod 755 $(DESTDIR)$(PREFIX)/bin/instaaur
