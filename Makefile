@@ -9,7 +9,7 @@ install:
 	@mkdir -p $(DESTDIR)$(MANDIR)/man1
 	@cp -p instaaur $(DESTDIR)$(PREFIX)/bin/instaaur
 	@cp -p instaaur.8 $(DESTDIR)$(MANDIR)/man8
-	@chmod 755 $(DESTDIR)$(PREFIX)/bin/bfetch
+	@chmod 755 $(DESTDIR)$(PREFIX)/bin/instaaur
 
 uninstall:
 	@rm -rf $(DESTDIR)$(PREFIX)/bin/instaaur
