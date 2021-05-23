@@ -23,7 +23,7 @@ shopt -s expand_aliases
 SCRIPTNAME=${0##*/}
 VERSION="2021.05.10"
 DESCRIPTION="A bach AUR wrapper"
-AUTHOR="Wayne Wesley <wayne6324@gmail.com>"
+AUTHOR="The-Repo-Club <wayne6324@gmail.com>"
 
 readonly SCRIPTNAME DESCRIPTION VERSION AUTHOR
 
@@ -373,7 +373,7 @@ query_online_version () {
     msg_verbose2 "Check for missing packages."
 
     for package in "${!packages[@]}"; do
-        msg "$package was not found."
+        msg_verbose1 "$package was not found."
     done
 
 }
@@ -392,12 +392,45 @@ query_local_version () {
     declare -A packages
 
     local IFS=$'\n'
-    for package in $(pacman -Qm "$@"); do
+    for package in $(pacman -Qm); do
         local package_name=${package%\ *}
         local package_version=${package#*\ }
         packages[$package_name]=$package_version
     done
 
+    if [[ $? -eq 0 ]]; then
+        msg "There are ${#packages[@]} local packages to check."
+        query_online_version
+        query_repo_version
+    else
+        error "Packages could not be loaded!"
+        return 2
+    fi
+
+}
+
+query_repo_version () {
+    list=$(pacconf --repo-list)
+    delete=(community core extra multilib)
+
+    for del in ${delete[@]}; do
+        list="${list[@]/$del}"
+    done
+
+    packagelist=$(echo "${list[@]/$delete}")
+
+    msg "Getting version of installed packages."
+
+    declare -A packages
+
+    local IFS=$'\n'
+    for repo in $packagelist; do
+        for package in $(paclist $repo); do
+            local package_name=${package%\ *}
+            local package_version=${package#*\ }
+            packages[$package_name]=$package_version
+        done
+    done
 
     if [[ $? -eq 0 ]]; then
         msg "There are ${#packages[@]} foreign packages to check."
