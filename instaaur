@@ -277,7 +277,7 @@ query_online_info () {
         local package_license=$(jshon -e License <<< "$package")
         for key in "${package_license}"
         do
-            package_license=$(echo "$key" | tr -d '\n["] '| tr , " ")
+            package_license=$(echo "$key" | tr -d '\n["] '| sed "s/,/, /g" | xargs -n 4 | sed ':a;N;$!ba;s/\n/\n\t\t\t/g')
         done
         local package_votes=$(jshon -e NumVotes -u <<< "$package")
         local package_popularity=$(jshon -e Popularity -u <<< "$package")
@@ -285,12 +285,27 @@ query_online_info () {
         local package_groups=$(jshon -e Groups <<< "$package")
         for key in "${package_groups}"
         do
-            package_groups=$(echo "$key" | tr -d '\n["] '| tr , " ")
+            package_groups=$(echo "$key" | tr -d '\n["]' | sed "s/,/, /g" | xargs -n 4 | sed ':a;N;$!ba;s/\n/\n\t\t\t/g')
         done
         local package_depends=$(jshon -e Depends <<< "$package")
         for key in "${package_depends}"
         do
-            package_depends=$(echo "$key" | tr -d '\n["] '| tr , " ")
+            package_depends=$(echo "$key" | tr -d '\n["]' | sed "s/,/, /g" | xargs -n 4 | sed ':a;N;$!ba;s/\n/\n\t\t\t/g')
+        done
+        local package_provides=$(jshon -e Provides <<< "$package")
+        for key in "${package_provides}"
+        do
+            package_provides=$(echo "$key" | tr -d '\n["]' | sed "s/,/, /g" | xargs -n 4 | sed ':a;N;$!ba;s/\n/\n\t\t\t/g')
+        done
+        local package_makedepends=$(jshon -e MakeDepends <<< "$package")
+        for key in "${package_makedepends}"
+        do
+            package_makedepends=$(echo "$key" | tr -d '\n["]' | sed "s/,/, /g" | xargs -n 4 | sed ':a;N;$!ba;s/\n/\n\t\t\t/g')
+        done
+        local package_optdepends=$(jshon -e OptDepends <<< "$package")
+        for key in "${package_optdepends}"
+        do
+            package_optdepends=$(echo "$key" | tr -d '\n["]' | sed "s/,/, /g" | xargs -n 4 | sed ':a;N;$!ba;s/\n/\n\t\t\t/g')
         done
         local package_maintainer=$(jshon -e Maintainer -u <<< "$package")
         local package_firstsubmitted=$(jshon -e FirstSubmitted -u <<< "$package")
@@ -298,20 +313,23 @@ query_online_info () {
         local package_lastmodified=$(jshon -e LastModified -u <<< "$package")
         local package_lastmodified=$(TZ=UTC0 printf '%(%c)T\n' $package_lastmodified)
 
-        echo -e "${RED}Repository           : ${ALL_OFF}aur"
-        echo -e "${RED}Name                 : ${GREEN}${package_name}"
-        echo -e "${RED}Version              : ${ALL_OFF}${package_version}"
-        echo -e "${RED}URL                  : ${ALL_OFF}${package_url}"
-        echo -e "${RED}Licenses             : ${ALL_OFF}${package_license[@]:-Unlicense}"
-        echo -e "${RED}Groups               : ${ALL_OFF}${package_groups:-None}"
-        echo -e "${RED}Depends On           : ${ALL_OFF}${package_depends:-None}"
-        echo -e "${RED}Maintainer           : ${ALL_OFF}${package_maintainer}"
-        echo -e "${RED}Description          : ${ALL_OFF}$package_description"
-        echo -e "${RED}FirstSubmitted       : ${ALL_OFF}$package_firstsubmitted"
-        echo -e "${RED}LastModified         : ${ALL_OFF}$package_lastmodified"
-        echo -e "${RED}Popularity           : ${ALL_OFF}${package_popularity}"
-        echo -e "${RED}Votes                : ${ALL_OFF}${package_votes}"
-        echo
+        echo -e "${RED}Repository            : ${ALL_OFF}aur"
+        echo -e "${RED}Name                  : ${GREEN}${package_name}"
+        echo -e "${RED}Version               : ${ALL_OFF}${package_version}"
+        echo -e "${RED}URL                   : ${ALL_OFF}${package_url}"
+        echo -e "${RED}AUR URL               : ${ALL_OFF}https://aur.archlinux.org/packages/${package_name}/"
+        echo -e "${RED}Groups                : ${ALL_OFF}${package_groups:-None}"
+        echo -e "${RED}Licenses              : ${ALL_OFF}${package_license[@]:-Unlicense}"
+        echo -e "${RED}Provides              : ${ALL_OFF}${package_provides:-None}"
+        echo -e "${RED}Depends On            : ${ALL_OFF}${package_depends:-None}"
+        echo -e "${RED}Make Depends          : ${ALL_OFF}${package_makedepends:-None}"
+        echo -e "${RED}Opt Depends           : ${ALL_OFF}${package_optdepends:-None}"
+        echo -e "${RED}Maintainer            : ${ALL_OFF}${package_maintainer}"
+        echo -e "${RED}Description           : ${ALL_OFF}$package_description"
+        echo -e "${RED}FirstSubmitted        : ${ALL_OFF}$package_firstsubmitted"
+        echo -e "${RED}LastModified          : ${ALL_OFF}$package_lastmodified"
+        echo -e "${RED}Popularity            : ${ALL_OFF}${package_popularity}"
+        echo -e "${RED}Votes                 : ${ALL_OFF}${package_votes}"
 
     done
 
