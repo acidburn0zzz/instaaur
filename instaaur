@@ -21,7 +21,7 @@ shopt -s expand_aliases
 
 ## Script metadata
 SCRIPTNAME=${0##*/}
-VERSION="2021.05.10"
+VERSION="2021.07.25"
 DESCRIPTION="A bach AUR wrapper"
 AUTHOR="The-Repo-Club <wayne6324@gmail.com>"
 
@@ -200,6 +200,159 @@ search() {
         printf "${PURPLE}%s${ALL_OFF} ${color}%s${ALL_OFF} ${BLUE}%s${ALL_OFF} ${CYAN}%s${ALL_OFF} ${YELLOW}%s${ALL_OFF}\n%s\n\n" "$package_name" "$package_version" "$last_modified" "$maintainer" "$num_votes" "$package_description"
 
     done
+}
+
+#=== FUNCTION =================================================================
+#        Name: find_package
+# Description: Find packages from Github
+# Parameter *: Package name to search for
+#==============================================================================
+[[ $AURREPO ]] || AURREPO="ArchAUR"
+
+find_package () {
+
+    if [[ $1 ]]; then
+        local aur_response=$(curl \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GIT_TOKEN" \
+            "https://api.github.com/repos/$AURREPO/$1/contents/")
+
+        msg_verbose2 "Getting number of objects in json array!"
+
+        local pkg_found=$(echo $aur_response | jq '.[].download_url' | grep '/PKGBUILD"')
+        if [[ ! $pkg_found ]]; then
+            error "Packages infos could not be loaded!"
+            return 2
+        fi
+
+        msg_verbose2 "Looping over json array!"
+        msg "Searching $AURREPO for package $1"
+
+        for i in $(echo $aur_response | jq '.[].download_url'); do
+            url=$(echo $i | grep '/PKGBUILD"' | sed 's/"//g')
+            if [[ $url ]]; then
+                local package_file=$(wget -q "$url" -O ~/.cache/PKGBUILD)
+                local package_name=$(cat ~/.cache/PKGBUILD | grep "^pkgname=" | sed 's/pkgname=//g')
+                local package_version=$(cat ~/.cache/PKGBUILD | grep "^pkgver=" | sed 's/pkgver=//g')
+                local package_description=$(cat ~/.cache/PKGBUILD | grep "^pkgdesc=" | sed 's/pkgdesc=//g' | sed "s/'//g")
+                printf "[${RED}%s${ALL_OFF}] ${PURPLE}%s${ALL_OFF} ${GREEN}%s${ALL_OFF}\n%s\n" "$AURREPO" "$package_name" "$package_version" "$package_description"
+            fi
+        done
+    else
+        packages=
+        local aur_response=$(curl \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GIT_TOKEN" \
+            "https://api.github.com/users/$AURREPO/repos")
+
+        msg_verbose2 "Getting number of objects in json array!"
+
+        local pkg_found=$(echo $aur_response | jq '.[].full_name')
+
+        msg_verbose2 "Looping over json array!"
+        msg "Searching $AURREPO for packages"
+
+        for i in $(echo $aur_response | jq '.[].full_name'); do
+            name=$(echo $i | sed 's/"//g')
+
+            local aur_response=$(curl \
+                -H "Accept: application/vnd.github.v3+json" \
+                -H "Authorization: token $GIT_TOKEN" \
+                "https://api.github.com/repos/$name/contents/")
+
+            local pkg_found=$(echo $aur_response | jq '.[].download_url' | grep '/PKGBUILD"')
+            if [[ $pkg_found ]]; then
+                msg_verbose2 "Looping over json array!"
+
+                for i in $(echo $aur_response | jq '.[].download_url'); do
+                    url=$(echo $i | grep '/PKGBUILD"' | sed 's/"//g')
+                    if [[ $url ]]; then
+                        local package_file=$(wget -q "$url" -O ~/.cache/PKGBUILD)
+                        local package_name=$(cat ~/.cache/PKGBUILD | grep "^pkgname=" | sed 's/pkgname=//g')
+                        local package_version=$(cat ~/.cache/PKGBUILD | grep "^pkgver=" | sed 's/pkgver=//g')
+                        local package_description=$(cat ~/.cache/PKGBUILD | grep "^pkgdesc=" | sed 's/pkgdesc=//g' | sed "s/'//g")
+                        packages+=("[${RED}$AURREPO${ALL_OFF}] ${PURPLE}$package_name${ALL_OFF} ${GREEN}$package_version${ALL_OFF}\n$package_description\n")
+                    fi
+                done
+            fi
+        done
+        if [[ ${packages[@]} ]]; then
+            echo -e "${packages[@]}"
+        else
+            error "Packages infos could not be loaded!"
+            return 2
+        fi
+    fi
+}
+
+#=== FUNCTION =================================================================
+#        Name: finddownload_package
+# Description: Find packages from Github then download
+# Parameter *: Package name to search for
+#==============================================================================
+
+finddownload_package () {
+
+    if [[ $1 ]]; then
+        local aur_response=$(curl \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GIT_TOKEN" \
+            "https://api.github.com/repos/$AURREPO/$1/contents/")
+
+        msg_verbose2 "Getting number of objects in json array!"
+
+        local pkg_found=$(echo $aur_response | jq '.[].download_url' | grep '/PKGBUILD"')
+        if [[ ! $pkg_found ]]; then
+            error "Packages infos could not be loaded!"
+            return 2
+        fi
+
+        msg_verbose2 "Looping over json array!"
+        msg "Searching $AURREPO for package $1"
+
+        for i in $(echo $aur_response | jq '.[].download_url'); do
+            url=$(echo $i | grep '/PKGBUILD"' | sed 's/"//g')
+            if [[ $url ]]; then
+                local package_file=$(wget -q "$url" -O ~/.cache/PKGBUILD)
+                local package_name=$(cat ~/.cache/PKGBUILD | grep "^pkgname=" | sed 's/pkgname=//g')
+                local package_version=$(cat ~/.cache/PKGBUILD | grep "^pkgver=" | sed 's/pkgver=//g')
+                local package_description=$(cat ~/.cache/PKGBUILD | grep "^pkgdesc=" | sed 's/pkgdesc=//g' | sed "s/'//g")
+                printf "[${RED}%s${ALL_OFF}] ${PURPLE}%s${ALL_OFF} ${GREEN}%s${ALL_OFF}\n%s\n" "$AURREPO" "$package_name" "$package_version" "$package_description"
+            fi
+        done
+
+        echo ""
+
+        read -p "Are you sure you want to download ${PURPLE}$package_name${ALL_OFF} from ${RED}$AURREPO${ALL_OFF}? [Y/n] " response
+        response=${response:l} #tolower
+        if [[ $response =~ ^(yes|y| ) ]] || [[ -z $response ]]; then
+            msg_verbose2 "URL is: https://github.com/$AURREPO/$1.git"
+            if [[ -d "$downloaddir/$1" ]]; then
+                msg "Pulling '$1'"
+                git -C "$downloaddir/$1" pull
+            else
+                msg "Cloning '$1' into '$downloaddir'"
+                git clone --quiet "https://github.com/$AURREPO/$1.git" "$downloaddir/$1"
+            fi
+
+            echo ""
+
+            read -p "Would you like to build and install ${PURPLE}$package_name${ALL_OFF} from ${RED}$AURREPO${ALL_OFF}? [Y/n] " response
+            response=${response:l} #tolower
+            if [[ $response =~ ^(yes|y| ) ]] || [[ -z $response ]]; then
+                msg_verbose2 "URL is: https://github.com/$AURREPO/$1.git"
+                if [[ -d "$downloaddir/$1" ]]; then
+                    msg "Building then installing $1"
+                    cd "$downloaddir/$1" && makepkg -rsfi
+                    cd "$OLDPWD"
+                else
+                    error "Failed to download ${PURPLE}$package_name${ALL_OFF} from ${RED}$AURREPO${ALL_OFF}!"
+                fi
+            fi
+        fi
+    else
+        error "Not enough parameters supplied"
+    fi
 }
 
 
@@ -516,7 +669,19 @@ download () {
                 git -C "$downloaddir/$1" pull
             else
                 msg "Cloning '$1' into '$downloaddir'"
-                git clone --quiet "${AURURL}/$gitrepo/" "$downloaddir/$1"
+                git clone --quiet "${AURURL}/$gitrepo" "$downloaddir/$1"
+            fi
+        fi
+
+        if [[ -d "$downloaddir/$1" ]]; then
+            read -p "Would you like to build and install ${PURPLE}$1${ALL_OFF}? [Y/n] " response
+            response=${response:l} #tolower
+            if [[ $response =~ ^(yes|y| ) ]] || [[ -z $response ]]; then
+                local gitrepo="${1}.git"
+                msg_verbose2 "URL is: ${AURURL}/$gitrepo"
+                msg "Building then installing $1"
+                cd "$downloaddir/$1" && makepkg -rsfi
+                cd "$OLDPWD"
             fi
         fi
 
@@ -578,18 +743,20 @@ usage() {
       %s [options] [<packages>]...
 
     Options:
-      -h, --help                              Display help
-      -i, --info                              Display aur package info
-      -c, --check                             Check installed, foreign packages if there are updates available
-      -p, --parseable                         Check installed, foreign packages if there are updates available and print them in a parseable format
-      -d DIRECTORY, --downloaddir DIRECTORY   Download packages to the specified directory
-      -s KEYWORDS, --search KEYWORDS          Search for packages containing specified keywords
-      -m MAINTAINER, --maintainer MAINTAINER  Search packages from specified maintainer
-      -n NAME, --name NAME                    Search packages by exact name
-      -g, --git                               Download packages using git
-      -v, --verbose                           Be more verbose, can be supplied at  maximum 2 times
-      -q, --quiet                             Be less verbose. Takes precedence over -v and --verbose
-      --version                               Print version information and exits
+      -h, --help                                Display help.
+      -i, --info                                Display aur package info.
+      -f, --find                                Check github for package.
+      -fd, --finddownload                       Find and download pacage from github.
+      -c, --check                               Check installed, foreign packages if there are updates available.
+      -p, --parseable                           Check installed, foreign packages if there are updates available and print them in a parseable format.
+      -d DIRECTORY, --downloaddir DIRECTORY     Download packages to the specified directory.
+      -s KEYWORDS, --search KEYWORDS            Search for packages containing specified keywords.
+      -m MAINTAINER, --maintainer MAINTAINER    Search packages from specified maintainer.
+      -n NAME, --name NAME                      Search packages by exact name.
+      -g, --git                                 Download packages using git.
+      -v, --verbose                             Be more verbose, can be supplied at  maximum 2 times.
+      -q, --quiet                               Be less verbose. Takes precedence over -v and --verbose.
+      --version                                 Print version information and exits.
       \n" "$SCRIPTNAME" "$SCRIPTNAME"
 }
 
@@ -597,6 +764,8 @@ usage() {
 info_flag=
 check_flag=
 search_flag=
+find_flag=
+fdown_flag=
 maintainer_flag=
 name_flag=
 parseable_flag=
@@ -649,6 +818,14 @@ while true; do
             ;;
         -s|--search)
             search_flag=1
+            shift
+            ;;
+        -f|--find)
+            find_flag=1
+            shift
+            ;;
+        -fd|--finddownload)
+            fdown_flag=1
             shift
             ;;
         -m|--maintainer)
@@ -706,6 +883,10 @@ elif [[ "$check_flag" ]]; then
     query_local_version "$@"
 elif [[ "$search_flag" ]]; then
     search "search" "$@"
+elif [[ "$find_flag" ]]; then
+    find_package "$@"
+elif [[ "$fdown_flag" ]]; then
+    finddownload_package "$@"
 elif [[ "$maintainer_flag" ]]; then
     search "msearch" "$@"
 elif [[ "$name_flag" ]]; then
