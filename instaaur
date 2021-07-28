@@ -131,6 +131,13 @@ error() {
 
 }
 
+helper() {
+
+    local mesg=$1; shift
+    printf "${GREEN}==> HELP:${ALL_OFF}${BOLD} %s${ALL_OFF}\n" "$mesg" "$@" >&2
+
+}
+
 #=== FUNCTION =================================================================
 #        Name: search
 # Description: Search packages in AUR
@@ -210,12 +217,26 @@ search() {
 [[ $AURREPO ]] || AURREPO="ArchAUR"
 
 find_package () {
+    if [[ ! -d "$reposdir" ]]; then
+        helper "You may need to run -u to populate the databases!"
+        return 2
+    elif [[ ! -d "$reposdir/$AURREPO" ]]; then
+        helper "You may need to run -u to populate the databases for $AURREPO!"
+        return 2
+    elif [[ ! -f "$reposdir/$AURREPO.json" ]]; then
+        helper "You may need to run -u to populate the databases for $AURREPO!"
+        return 2
+    fi
 
     if [[ $1 ]]; then
-        local aur_response=$(curl \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: token $GIT_TOKEN" \
-            "https://api.github.com/repos/$AURREPO/$1/contents/")
+
+        if [[ ! -f "$reposdir/$AURREPO/$1.json" ]]; then
+            error "Packages infos could not be loaded!"
+            helper "Maybe try -u to update databases!"
+            return 2
+        fi
+
+        local aur_response=$(cat "$reposdir/$AURREPO/$1.json")
 
         msg_verbose2 "Getting number of objects in json array!"
 
@@ -235,15 +256,16 @@ find_package () {
                 local package_name=$(cat ~/.cache/PKGBUILD | grep "^pkgname=" | sed 's/pkgname=//g')
                 local package_version=$(cat ~/.cache/PKGBUILD | grep "^pkgver=" | sed 's/pkgver=//g')
                 local package_description=$(cat ~/.cache/PKGBUILD | grep "^pkgdesc=" | sed 's/pkgdesc=//g' | sed "s/'//g")
-                printf "[${RED}%s${ALL_OFF}] ${PURPLE}%s${ALL_OFF} ${GREEN}%s${ALL_OFF}\n%s\n" "$AURREPO" "$package_name" "$package_version" "$package_description"
+                if [[ $1 == $package_name ]]; then
+                    printf "[${RED}%s${ALL_OFF}] ${PURPLE}%s${ALL_OFF} ${GREEN}%s${ALL_OFF}\n%s\n" "$AURREPO" "$package_name" "$package_version" "$package_description"
+                else
+                    printf "[${RED}%s${ALL_OFF}] [${BLUE}%s${ALL_OFF}] ${PURPLE}%s${ALL_OFF} ${GREEN}%s${ALL_OFF}\n%s\n" "$AURREPO" "$1" "$package_name" "$package_version" "$package_description"
+                fi
             fi
         done
     else
         packages=
-        local aur_response=$(curl \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: token $GIT_TOKEN" \
-            "https://api.github.com/users/$AURREPO/repos")
+        local aur_response=$(cat "$reposdir/$AURREPO.json")
 
         msg_verbose2 "Getting number of objects in json array!"
 
@@ -254,15 +276,13 @@ find_package () {
 
         for i in $(echo $aur_response | jq '.[].full_name'); do
             name=$(echo $i | sed 's/"//g')
+            package=$(echo $name | awk -F/ '{print $2}')
 
-            local aur_response=$(curl \
-                -H "Accept: application/vnd.github.v3+json" \
-                -H "Authorization: token $GIT_TOKEN" \
-                "https://api.github.com/repos/$name/contents/")
+            local aur_response=$(cat "$reposdir/$name.json")
 
             local pkg_found=$(echo $aur_response | jq '.[].download_url' | grep '/PKGBUILD"')
             if [[ $pkg_found ]]; then
-                msg_verbose2 "Looping over json array!"
+                msg_verbose2 "Looping over json array for $name!"
 
                 for i in $(echo $aur_response | jq '.[].download_url'); do
                     url=$(echo $i | grep '/PKGBUILD"' | sed 's/"//g')
@@ -271,7 +291,11 @@ find_package () {
                         local package_name=$(cat ~/.cache/PKGBUILD | grep "^pkgname=" | sed 's/pkgname=//g')
                         local package_version=$(cat ~/.cache/PKGBUILD | grep "^pkgver=" | sed 's/pkgver=//g')
                         local package_description=$(cat ~/.cache/PKGBUILD | grep "^pkgdesc=" | sed 's/pkgdesc=//g' | sed "s/'//g")
-                        packages+=("[${RED}$AURREPO${ALL_OFF}] ${PURPLE}$package_name${ALL_OFF} ${GREEN}$package_version${ALL_OFF}\n$package_description\n")
+                        if [[ $package == $package_name ]]; then
+                            packages+=("[${RED}$AURREPO${ALL_OFF}] ${PURPLE}$package_name${ALL_OFF} ${GREEN}$package_version${ALL_OFF}\n$package_description\n")
+                        else
+                            packages+=("[${RED}$AURREPO${ALL_OFF}] [${BLUE}$package${ALL_OFF}] ${PURPLE}$package_name${ALL_OFF} ${GREEN}$package_version${ALL_OFF}\n$package_description\n")
+                        fi
                     fi
                 done
             fi
@@ -292,12 +316,26 @@ find_package () {
 #==============================================================================
 
 finddownload_package () {
+    if [[ ! -d "$reposdir" ]]; then
+        helper "You may need to run -u to populate the databases!"
+        return 2
+    elif [[ ! -d "$reposdir/$AURREPO" ]]; then
+        helper "You may need to run -u to populate the databases for $AURREPO!"
+        return 2
+    elif [[ ! -f "$reposdir/$AURREPO.json" ]]; then
+        helper "You may need to run -u to populate the databases for $AURREPO!"
+        return 2
+    fi
 
     if [[ $1 ]]; then
-        local aur_response=$(curl \
-            -H "Accept: application/vnd.github.v3+json" \
-            -H "Authorization: token $GIT_TOKEN" \
-            "https://api.github.com/repos/$AURREPO/$1/contents/")
+
+        if [[ ! -f "$reposdir/$AURREPO/$1.json" ]]; then
+            error "Packages infos could not be loaded!"
+            helper "Maybe try -u to update databases!"
+            return 2
+        fi
+
+        local aur_response=$(cat "$reposdir/$AURREPO/$1.json")
 
         msg_verbose2 "Getting number of objects in json array!"
 
@@ -317,7 +355,11 @@ finddownload_package () {
                 local package_name=$(cat ~/.cache/PKGBUILD | grep "^pkgname=" | sed 's/pkgname=//g')
                 local package_version=$(cat ~/.cache/PKGBUILD | grep "^pkgver=" | sed 's/pkgver=//g')
                 local package_description=$(cat ~/.cache/PKGBUILD | grep "^pkgdesc=" | sed 's/pkgdesc=//g' | sed "s/'//g")
-                printf "[${RED}%s${ALL_OFF}] ${PURPLE}%s${ALL_OFF} ${GREEN}%s${ALL_OFF}\n%s\n" "$AURREPO" "$package_name" "$package_version" "$package_description"
+                if [[ $1 == $package_name ]]; then
+                    printf "[${RED}%s${ALL_OFF}] ${PURPLE}%s${ALL_OFF} ${GREEN}%s${ALL_OFF}\n%s\n" "$AURREPO" "$package_name" "$package_version" "$package_description"
+                else
+                    printf "[${RED}%s${ALL_OFF}] [${BLUE}%s${ALL_OFF}] ${PURPLE}%s${ALL_OFF} ${GREEN}%s${ALL_OFF}\n%s\n" "$AURREPO" "$1" "$package_name" "$package_version" "$package_description"
+                fi
             fi
         done
 
@@ -355,6 +397,44 @@ finddownload_package () {
     fi
 }
 
+#=== FUNCTION =================================================================
+#        Name: update_packages
+# Description: Update packages list from Github
+#==============================================================================
+update_packages () {
+
+    msg "Updating package databases"
+
+    if [[ ! -d "$reposdir" ]]; then
+        mkdir $reposdir
+    fi
+    local aur_response=$(curl \
+        -H "Accept: application/vnd.github.v3+json" \
+        -H "Authorization: token $GIT_TOKEN" \
+        "https://api.github.com/users/$AURREPO/repos?per_page=100")
+
+    msg_verbose2 "Updating database for $AURREPO!"
+
+    echo -e "$aur_response" > $reposdir/$AURREPO.json
+
+    local pkg_found=$(echo $aur_response | jq '.[].full_name')
+    if [[ ! -d "$reposdir/$AURREPO" ]]; then
+        mkdir $reposdir/$AURREPO
+    fi
+    for i in $(echo $aur_response | jq '.[].full_name'); do
+        name=$(echo $i | sed 's/"//g')
+        bm=$(echo $name | awk -F"/" '{print $2}' )
+
+        local aur_response=$(curl \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token $GIT_TOKEN" \
+            "https://api.github.com/repos/$name/contents/")
+
+        msg_verbose2 "Updating database for $name!"
+
+        echo -e "$aur_response" > $reposdir/$name.json
+    done
+}
 
 #=== FUNCTION =================================================================
 #        Name: check_version
@@ -745,7 +825,7 @@ usage() {
     Options:
       -h, --help                                Display help.
       -i, --info                                Display aur package info.
-      -f, --find                                Check github for package.
+      -f, --find                                Search github for package.
       -fd, --finddownload                       Find and download pacage from github.
       -c, --check                               Check installed, foreign packages if there are updates available.
       -p, --parseable                           Check installed, foreign packages if there are updates available and print them in a parseable format.
@@ -753,7 +833,7 @@ usage() {
       -s KEYWORDS, --search KEYWORDS            Search for packages containing specified keywords.
       -m MAINTAINER, --maintainer MAINTAINER    Search packages from specified maintainer.
       -n NAME, --name NAME                      Search packages by exact name.
-      -g, --git                                 Download packages using git.
+      -g, --git                                 Download packages using git, then install using makepkg.
       -v, --verbose                             Be more verbose, can be supplied at  maximum 2 times.
       -q, --quiet                               Be less verbose. Takes precedence over -v and --verbose.
       --version                                 Print version information and exits.
@@ -769,10 +849,12 @@ fdown_flag=
 maintainer_flag=
 name_flag=
 parseable_flag=
+update_flag=
 git_flag=0
 verbose=0
 quiet=0
 downloaddir="$HOME/.cache/instaaur/pkg/"
+reposdir="$HOME/.cache/instaaur/repos/"
 
 if [[ $# -eq 0 ]]; then
     usage
@@ -836,6 +918,10 @@ while true; do
             name_flag=1
             shift
             ;;
+        -u|--update)
+            update_flag=1
+            shift
+            ;;
         -p|--parseable)
             check_flag=1
             parseable_flag=1
@@ -877,6 +963,18 @@ else
     downloaddir=${downloaddir%/}
 fi
 
+# check if reposdir is a directory and remove trailing slash
+if [[ -d $reposdir ]]; then
+    if [[ "$reposdir" == "./" ]]; then
+        reposdir="$PWD"
+    else
+        reposdir=${reposdir%/}
+    fi
+else
+    reposdir=${reposdir%/}
+fi
+
+
 if [[ "$info_flag" ]]; then
     query_online_info "$@"
 elif [[ "$check_flag" ]]; then
@@ -891,6 +989,8 @@ elif [[ "$maintainer_flag" ]]; then
     search "msearch" "$@"
 elif [[ "$name_flag" ]]; then
     search "nsearch" "$@"
+elif [[ "$update_flag" ]]; then
+    update_packages
 else
     download "$@"
 fi
