@@ -799,8 +799,7 @@ version() {
        ===   =   =  =====       ${pacver}
       =   =  =   =  =   =
       =====  =   =  ====        This program may be freely redistributed under
-      =   =  =   =  =   =       the terms of the Attribution NonCommercial
-      =   =   ===   =   =       ShareAlike 4.0 International License.
+      =   =  =   =  =   =       the terms of the GNU General Public License.
 
                                 %s
     \n" "$SCRIPTNAME" "$VERSION" "$DESCRIPTION" "$AUTHOR"
